@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -45,6 +45,8 @@ async def root():
 
 class ChatRequest(BaseModel):
     message: str
+    # outputs 目录内的图片名，随本轮消息一起送给模型
+    media: List[str] = []
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -52,9 +54,12 @@ async def chat_endpoint(req: ChatRequest):
     流式对话接口。使用 GET / POST 无所谓，这里为了获取 query 用 POST 接收 message 后，
     将其转换成 SSE (Server-Sent Events) 返回。
     """
+    # 只取 basename，客户端无法用路径读到 outputs 目录之外
+    media = [os.path.join(outputs_path, os.path.basename(p)) for p in req.media[:8]]
+
     async def sse_generator() -> AsyncGenerator[str, None]:
         # 遍历 agent_loop 的每一个步骤触发的字典事件
-        async for event in agent.chat_stream(req.message):
+        async for event in agent.chat_stream(req.message, media):
             # 将 python 字典格式化为 JSON 字符串
             data_str = json.dumps(event, ensure_ascii=False)
             # SSE 要求格式以 data: 开头，以 \n\n 结尾

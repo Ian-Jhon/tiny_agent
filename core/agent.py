@@ -1,5 +1,5 @@
 import os
-from typing import AsyncGenerator, Dict, Any, Callable
+from typing import AsyncGenerator, Dict, Any, Callable, List, Optional
 
 from openai import AsyncOpenAI
 
@@ -43,7 +43,7 @@ class TinyAgent:
         self.context = ContextBuilder(self.memory, self.skills, workspace_dir)
         self.loop = AgentLoop(self.client, self.tools, model=model)
 
-    async def chat_stream(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def chat_stream(self, user_message: str, media: Optional[List[str]] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """
         核心的对外交互接口。接收字符串，返回事件流（AsyncGenerator）。
         
@@ -52,14 +52,16 @@ class TinyAgent:
         2. 将问题连同历史记录、系统提示组装成一整条消息 Payload：`messages`。
         3. 用 Generator 的方式透传 `loop` 执行产生的所有状态与文字输出。
         4. 最后完成时，将本次对答新增好的多轮记录（User, Assistant, Tool等）追加进入记忆存储库 `MemoryStore`。
+        
+        :param media: 图片路径列表，本轮以 image_url 送给模型；历史只记文件名，不存 base64
         """
         # 1. 组装发往大模型的初始 Payload
-        messages_payload = self.context.build_messages(user_message)
+        messages_payload = self.context.build_messages(user_message, media)
         
         # 把用户的消息率先单独加入记忆，代表一轮交互正式开始
         self.memory.add_message({
             "role": "user",
-            "content": user_message
+            "content": f"{user_message} [附带图片: {'、'.join(media)}]" if media else user_message
         })
         
         # 2. 下沉进核心 Loop 返回流
